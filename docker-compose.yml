@@ -1,0 +1,15 @@
+#version: '3.8'
+#
+#services:
+#  app-a:
+#    build: .
+#    networks:
+#      - kafka-net
+#    environment:
+#      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+#    ports:
+#      - "8081:8080"
+#
+#networks:
+#  kafka-net:po
+#    external: true
