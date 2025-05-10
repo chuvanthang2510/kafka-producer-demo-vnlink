@@ -2,7 +2,6 @@ package demo.thangcv.threads;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import demo.thangcv.configs.ProducerConfig;
 import demo.thangcv.entitys.ThreadConfig;
 import demo.thangcv.repos.ThreadConfigRepository;
 import demo.thangcv.service.TransactionProducer;
@@ -15,6 +14,12 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Class xử lý việc gửi transaction messages theo đa luồng
+ * Sử dụng thread pool để quản lý các worker threads
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -24,38 +29,53 @@ public class MultiThreadTransactionProducer implements CommandLineRunner {
     private final ThreadConfigRepository threadConfigRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // Thread pool để quản lý các worker threads
     private ThreadPoolExecutor senderExecutor;
+    // Số lượng thread hiện tại
     private volatile int currentThreadCount = 0;
 
-    private final BlockingQueue<String> transactionQueue = new LinkedBlockingQueue<>(10_000); // giới hạn tránh tràn RAM
+    // Queue để lưu trữ các transaction chờ gửi
+    private final BlockingQueue<String> transactionQueue = new LinkedBlockingQueue<>(10_000);
 
+    // Các hằng số cấu hình
     private static final int SENDER_BATCH_SIZE = 50;
     private static final int SENDER_INTERVAL_MS = 1000;
+    private static final int TX_PER_THREAD_PER_MIN = 300;
 
+    /**
+     * Khởi tạo và chạy producer khi ứng dụng khởi động
+     */
     @Override
     public void run(String... args) {
+        // Lấy số lượng thread từ database
         int initialThreadCount = getThreadCountFromDb();
+        // Khởi tạo thread pool
         initThreadPool(initialThreadCount);
         currentThreadCount = initialThreadCount;
 
-        // Khởi tạo các worker sinh giao dịch
+        // Khởi tạo các worker threads
         for (int i = 0; i < initialThreadCount; i++) {
             senderExecutor.submit(this::workerTask);
         }
 
-        // Khởi tạo thread gửi batch giao dịch từ queue
+        // Khởi tạo thread gửi batch messages
         startBatchKafkaSenderWorker();
     }
 
+    /**
+     * Cập nhật số lượng thread mỗi phút
+     */
     @Scheduled(fixedDelay = 60000)
     public void refreshThreadPool() {
         int newThreadCount = getThreadCountFromDb();
         if (newThreadCount != currentThreadCount) {
+            // Cập nhật kích thước thread pool
             senderExecutor.setCorePoolSize(newThreadCount);
             senderExecutor.setMaximumPoolSize(newThreadCount);
             int diff = newThreadCount - currentThreadCount;
             currentThreadCount = newThreadCount;
 
+            // Thêm threads mới nếu cần
             if (diff > 0) {
                 for (int i = 0; i < diff; i++) {
                     senderExecutor.submit(this::workerTask);
@@ -64,14 +84,20 @@ public class MultiThreadTransactionProducer implements CommandLineRunner {
         }
     }
 
-    public int getThreadCountFromDb() {
+    /**
+     * Lấy số lượng thread từ database
+     */
+    private int getThreadCountFromDb() {
         List<ThreadConfig> configs = threadConfigRepository.findAll();
         if (!configs.isEmpty()) {
-            return configs.get(0).getValue(); // lấy bản ghi đầu tiên
+            return configs.get(0).getValue();
         }
-        return 5; // mặc định nếu không có trong DB
+        return 5; // Giá trị mặc định
     }
 
+    /**
+     * Khởi tạo thread pool với số lượng thread được chỉ định
+     */
     private void initThreadPool(int threadCount) {
         senderExecutor = new ThreadPoolExecutor(
                 threadCount,
@@ -79,19 +105,36 @@ public class MultiThreadTransactionProducer implements CommandLineRunner {
                 60L,
                 TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(),
+                new ThreadFactory() {
+                    private final AtomicInteger counter = new AtomicInteger(1);
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        Thread thread = new Thread(r);
+                        thread.setName("kafka-producer-" + counter.getAndIncrement());
+                        thread.setUncaughtExceptionHandler((t, e) -> 
+                            log.error("Uncaught exception in thread " + t.getName(), e));
+                        return thread;
+                    }
+                },
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
     }
 
+    /**
+     * Task của mỗi worker thread
+     * Sinh và đưa transactions vào queue
+     */
     private void workerTask() {
         while (true) {
             try {
-                List<String> batch = generateBatchTransactions(ProducerConfig.BATCH_SIZE);
+                // Sinh batch transactions
+                List<String> batch = generateBatchTransactions(10);
                 for (String tx : batch) {
-                    transactionQueue.put(tx); // chặn nếu queue đầy
+                    transactionQueue.put(tx);
                 }
 
-                int delay = (60_000 * ProducerConfig.BATCH_SIZE) / ProducerConfig.TX_PER_THREAD_PER_MIN;
+                // Tính toán delay để đảm bảo rate limit
+                int delay = (60_000 * 10) / TX_PER_THREAD_PER_MIN;
                 Thread.sleep(delay);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -102,6 +145,9 @@ public class MultiThreadTransactionProducer implements CommandLineRunner {
         }
     }
 
+    /**
+     * Sinh một batch transactions
+     */
     private List<String> generateBatchTransactions(int count) {
         List<String> list = new ArrayList<>();
         for (int i = 0; i < count; i++) {
@@ -118,25 +164,30 @@ public class MultiThreadTransactionProducer implements CommandLineRunner {
         return list;
     }
 
+    /**
+     * Khởi tạo thread gửi batch messages đến Kafka
+     */
     private void startBatchKafkaSenderWorker() {
         Thread senderThread = new Thread(() -> {
             while (true) {
                 try {
                     List<String> batch = new ArrayList<>();
 
-                    // Lấy 1 phần tử đầu tiên để tránh block vô thời hạn
+                    // Lấy message đầu tiên từ queue
                     String first = transactionQueue.take();
                     batch.add(first);
 
-                    // Lấy thêm các phần tử còn lại nếu có (tối đa đến batch size)
+                    // Lấy thêm các messages còn lại
                     transactionQueue.drainTo(batch, SENDER_BATCH_SIZE - 1);
 
+                    // Gửi batch messages
                     for (String tx : batch) {
-                        producer.sendTransaction(tx); // gửi từng bản ghi
+                        producer.sendTransaction(tx);
                     }
 
                     log.info("Sent batch of size: {}", batch.size());
 
+                    // Đợi một khoảng thời gian trước khi gửi batch tiếp theo
                     Thread.sleep(SENDER_INTERVAL_MS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
