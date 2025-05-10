@@ -39,7 +39,7 @@ public class TransactionProducerSendMessage {
     // Repository để lưu các message thất bại
     private final FailedKafkaMessageRepository failedMessageRepository;
     
-    // Service để gửi thông báo đến hệ thống monitoring
+    // Service để gửi thông báo đến hệ thống monitoring abc
     private final MonitoringService monitoringService;
 
     // Topic chính để gửi messages
