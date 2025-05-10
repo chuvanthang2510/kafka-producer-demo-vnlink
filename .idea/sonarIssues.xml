@@ -158,6 +158,11 @@
             <set />
           </value>
         </entry>
+        <entry key="$PROJECT_DIR$/src/main/java/demo/thangcv/service/TransactionProducerSendMessage.java">
+          <value>
+            <set />
+          </value>
+        </entry>
         <entry key="$PROJECT_DIR$/src/main/java/demo/thangcv/threads/MultiThreadTransactionProducer.java">
           <value>
             <set />

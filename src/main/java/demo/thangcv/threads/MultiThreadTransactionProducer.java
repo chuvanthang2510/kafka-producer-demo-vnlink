@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import demo.thangcv.entitys.ThreadConfig;
 import demo.thangcv.repos.ThreadConfigRepository;
-import demo.thangcv.service.TransactionProducer;
+import demo.thangcv.service.TransactionProducerSendMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class MultiThreadTransactionProducer implements CommandLineRunner {
 
-    private final TransactionProducer producer;
+    private final TransactionProducerSendMessage producer;
     private final ThreadConfigRepository threadConfigRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
