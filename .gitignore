@@ -1,1 +1,19 @@
 # Created by .ignore support plugin (hsz.mobi)
+.gitignore
+.idea/sonarIssues.xml
+.idea/checkstyleidea.tmp/
+.idea/sonarlint/issuestore/0/
+.idea/sonarlint/issuestore/3/
+.idea/sonarlint/issuestore/4/
+.idea/sonarlint/issuestore/5/
+.idea/sonarlint/issuestore/7/
+.idea/sonarlint/issuestore/9/
+.idea/sonarlint/issuestore/b/
+.idea/sonarlint/issuestore/d/
+.idea/sonarlint/issuestore/e/
+.idea/vcs.xml
+src/main/java/com/components/
+src/test/
+target/generated-sources/
+target/generated-test-sources/
+target/test-classes/
