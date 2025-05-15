@@ -16,4 +16,8 @@ public class FailedKafkaMessage {
     private String payload;
     private String errorMessage;
     private Long createdAt;
+    private Integer retryCount = 0;
+    private String status = "PENDING";
+    private String resolutionNote;
+    private Long lastRetryTime;
 }

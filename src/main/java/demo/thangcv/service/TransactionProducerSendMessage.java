@@ -130,6 +130,8 @@ public class TransactionProducerSendMessage {
             failedMsg.setErrorMessage(ex.getMessage());
             failedMsg.setTopic(topicName);
             failedMsg.setCreatedAt(System.currentTimeMillis());
+            failedMsg.setStatus("PENDING");
+            failedMsg.setRetryCount(0);
             failedMessageRepository.save(failedMsg);
             log.info("Saved failed message to DB for later retry");
         } catch (Exception dbEx) {
@@ -154,7 +156,7 @@ public class TransactionProducerSendMessage {
 
         // 3. Gửi cảnh báo đến hệ thống giám sát
         try {
-            monitoringService.notifyKafkaFailure(topicName, message, ex);
+            monitoringService.notifyKafkaFailure(topicName, message, (Exception) ex);
         } catch (Exception monitorEx) {
             log.error("Monitoring service failed to notify", monitorEx);
         }
